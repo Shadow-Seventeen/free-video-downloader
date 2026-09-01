@@ -1,0 +1,20 @@
+[
+  {
+    "name": "SESSDATA",
+    "value": "\u4f60\u7684\u5b9e\u9645SESSDATA\u503c",
+    "domain": ".bilibili.com",
+    "path": "/",
+    "expires": 1800000000,
+    "secure": true,
+    "httponly": false
+  },
+  {
+    "name": "bili_jct",
+    "value": "\u4f60\u7684\u5b9e\u9645bili_jct\u503c",
+    "domain": ".bilibili.com",
+    "path": "/",
+    "expires": 1800000000,
+    "secure": true,
+    "httponly": false
+  }
+]

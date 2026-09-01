@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单下载测试</title>
+</head>
+<body>
+    <h1>简单下载测试</h1>
+    <button onclick="testDownload()">测试下载</button>
+    <div id="result"></div>
+
+    <script>
+        function log(message) {
+            document.getElementById('result').innerHTML += message + '<br>';
+        }
+
+        async function testDownload() {
+            log('开始测试下载...');
+
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        url: "https://www.bilibili.com/video/BV1jUgA6YEw6/?spm_id_from=333.1387.upload.video_card.click&vd_source=c560d6ba0469a144a9cdcc0bfd06c011",
+                        format_id: "64"
+                    })
+                });
+
+                log(`响应状态: ${response.status}`);
+                log(`响应类型: ${response.type}`);
+                log(`Content-Type: ${response.headers.get('content-type')}`);
+                log(`Content-Length: ${response.headers.get('content-length')}`);
+
+                // 检查Content-Disposition获取文件名
+                const contentDisposition = response.headers.get('content-disposition');
+                if (contentDisposition) {
+                    log(`Content-Disposition: ${contentDisposition}`);
+                    const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
+                    if (match) {
+                        const filename = decodeURIComponent(match[1].replace(/"/g, ''));
+                        log(`文件名: ${filename}`);
+                    }
+                }
+
+                if (response.ok) {
+                    log('✅ 下载成功！开始下载文件...');
+
+                    // 创建blob
+                    const blob = await response.blob();
+                    log(`Blob大小: ${blob.size} bytes`);
+                    log(`Blob类型: ${blob.type}`);
+
+                    // 创建下载链接
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+
+                    // 尝试从响应头获取文件名
+                    let filename = 'video.mp4';
+                    if (contentDisposition) {
+                        const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i);
+                        if (match) filename = decodeURIComponent(match[1].replace(/"/g, ''));
+                    }
+                    a.download = filename;
+
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(downloadUrl);
+
+                    log('🎉 文件下载已启动！');
+                } else {
+                    const errorText = await response.text();
+                    log(`❌ 下载失败: ${errorText}`);
+                }
+            } catch (error) {
+                log(`❌ 错误: ${error.message}`);
+                console.error('Error:', error);
+            }
+        }
+
+        // 测试API连接
+        fetch('/api/health')
+            .then(response => response.json())
+            .then(data => {
+                log(`✅ 后端连接正常: ${data.message}`);
+            })
+            .catch(error => {
+                log(`❌ 后端连接失败: ${error.message}`);
+            });
+    </script>
+</body>
+</html>

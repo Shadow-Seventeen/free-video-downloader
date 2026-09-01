@@ -20,10 +20,21 @@ export function getDownloadUrl() {
 }
 
 export async function downloadViaServer(url, formatId) {
-  const response = await api.post(
-    '/download',
-    { url, format_id: formatId },
-    { responseType: 'blob', timeout: 600000 }
-  )
-  return response
+  try {
+    const response = await api.post(
+      '/download',
+      { url, format_id: formatId },
+      {
+        responseType: 'blob',
+        timeout: 600000,
+        headers: {
+          'Accept': 'application/octet-stream',
+        }
+      }
+    )
+    return response
+  } catch (error) {
+    console.error('下载请求失败:', error)
+    throw error
+  }
 }

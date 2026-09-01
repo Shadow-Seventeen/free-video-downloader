@@ -223,21 +223,120 @@ async function handleParse(url) {
 async function handleDownload(formatId) {
   downloading.value = true
   try {
+    console.log('开始下载，formatId:', formatId)
+
     const response = await downloadViaServer(currentUrl.value, formatId)
-    const contentDisposition = response.headers['content-disposition']
+    console.log('下载响应状态:', response.status)
+    console.log('响应类型:', response.headers['content-type'])
+    console.log('Content-Disposition:', response.headers['content-disposition'])
+
+    // 获取文件名
     let filename = 'video.mp4'
+    const contentDisposition = response.headers['content-disposition']
     if (contentDisposition) {
-      const match = contentDisposition.match(/filename\*?=(?:UTF-8'')?([^;\n]+)/i)
-      if (match) filename = decodeURIComponent(match[1].replace(/"/g, ''))
+      // 尝试多种文件名匹配模式
+      const patterns = [
+        /filename\*?=(?:UTF-8'')?([^;\n]+)/i,
+        /filename="?([^"]+)"?/i,
+        /filename=([^;]+)/i
+      ]
+
+      for (const pattern of patterns) {
+        const match = contentDisposition.match(pattern)
+        if (match) {
+          filename = decodeURIComponent(match[1].replace(/"/g, ''))
+          break
+        }
+      }
     }
-    const blob = new Blob([response.data])
-    const url = window.URL.createObjectURL(blob)
+
+    console.log('使用文件名:', filename)
+
+    // 创建blob
+    const blob = new Blob([response.data], { type: response.headers['content-type'] || 'video/mp4' })
+    console.log('Blob大小:', blob.size)
+
+    // 方法1：使用标准下载方式
+    const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
-    a.href = url
+    a.href = downloadUrl
     a.download = filename
-    a.click()
-    window.URL.revokeObjectURL(url)
+    a.style.display = 'none'
+
+    document.body.appendChild(a)
+
+    // 使用dispatchEvent来模拟点击
+    const clickEvent = new MouseEvent('click', {
+      view: window,
+      bubbles: true,
+      cancelable: true
+    })
+    a.dispatchEvent(clickEvent)
+
+    // 清理
+    setTimeout(() => {
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(downloadUrl)
+    }, 100)
+
+    // 方法2：备用方案 - 检查是否真的开始下载
+    setTimeout(() => {
+      const activeDownloads = document.querySelectorAll('a[download]')
+      if (activeDownloads.length === 0) {
+        console.log('方法1失败，尝试方法2：新窗口打开')
+        window.open(downloadUrl, '_blank')
+
+        // 延长清理时间
+        setTimeout(() => {
+          window.URL.revokeObjectURL(downloadUrl)
+        }, 5000)
+      }
+    }, 1000)
+
+    // 方法3：最终备用 - 显示手动下载提示
+    setTimeout(() => {
+      const finalCheck = document.querySelectorAll('a[download]')
+      if (finalCheck.length === 0) {
+        console.log('所有自动方法都失败了，显示手动下载链接')
+
+        // 创建下载提示
+        const notice = document.createElement('div')
+        notice.id = 'download-notice'
+        notice.style.cssText = `
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          background: #28a745;
+          color: white;
+          padding: 15px;
+          border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          z-index: 10000;
+          max-width: 300px;
+        `
+        notice.innerHTML = `
+          <p style="margin: 0 0 10px 0;">📥 如果下载没有自动开始：</p>
+          <a href="${downloadUrl}" download="${filename}"
+             style="display: inline-block; background: white; color: #28a745;
+                    padding: 8px 12px; text-decoration: none; border-radius: 4px; font-weight: bold;">
+            点击手动下载
+          </a>
+          <p style="margin: 10px 0 0 0; font-size: 12px; opacity: 0.9;">文件名：${filename}</p>
+        `
+        document.body.appendChild(notice)
+
+        // 5秒后自动移除提示
+        setTimeout(() => {
+          const noticeEl = document.getElementById('download-notice')
+          if (noticeEl && noticeEl.parentNode) {
+            noticeEl.parentNode.removeChild(noticeEl)
+          }
+        }, 5000)
+      }
+    }, 2000)
+
   } catch (err) {
+    console.error('下载失败:', err)
     alert('下载失败：' + (err.message || '请稍后重试'))
   } finally {
     downloading.value = false
