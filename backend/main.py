@@ -52,11 +52,13 @@ app.add_middleware(
 
 class ParseRequest(BaseModel):
     url: str
+    cookies: str = None
 
 
 class DownloadRequest(BaseModel):
     url: str
     format_id: str = "bestvideo+bestaudio/best"
+    cookies: str = None
 
 
 @app.get("/api/health")
@@ -72,7 +74,7 @@ async def parse_video(req: ParseRequest):
         if is_douyin_url(req.url):
             result = await loop.run_in_executor(None, douyin_parser.parse, req.url)
         else:
-            result = await loop.run_in_executor(None, downloader.parse_video, req.url)
+            result = await loop.run_in_executor(None, downloader.parse_video, req.url, req.cookies)
         return {"success": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=400, detail={
@@ -90,12 +92,11 @@ async def download_video(req: DownloadRequest):
             result = await loop.run_in_executor(None, douyin_parser.download, req.url)
         else:
             result = await loop.run_in_executor(
-                None, downloader.download_video, req.url, req.format_id
+                None, downloader.download_video, req.url, req.format_id, req.cookies
             )
         filepath = result["filepath"]
         if not os.path.exists(filepath):
             raise HTTPException(status_code=500, detail="下载的文件不存在")
-
         return FileResponse(
             path=filepath,
             filename=result["filename"],
@@ -116,7 +117,7 @@ async def get_direct_url(req: DownloadRequest):
     try:
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            None, downloader.get_direct_url, req.url, req.format_id
+            None, downloader.get_direct_url, req.url, req.format_id, req.cookies
         )
         return {"success": True, "data": result}
     except Exception as e:

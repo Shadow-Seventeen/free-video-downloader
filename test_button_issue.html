@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试下载按钮问题</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .video-result {
+            max-width: 500px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+        }
+        .format-item {
+            padding: 8px;
+            margin: 4px 0;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .format-item:hover {
+            background: #f5f5f5;
+        }
+        .format-item.selected {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .download-btn {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 16px;
+        }
+        .download-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f0f0f0;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1>测试B站视频下载按钮问题</h1>
+    <button onclick="testVideo()">测试解析视频</button>
+
+    <div id="videoContainer" style="display: none;">
+        <h2>视频信息</h2>
+        <div id="videoInfo"></div>
+
+        <h3>可选格式</h3>
+        <div id="formatsList"></div>
+
+        <button id="downloadBtn" class="download-btn" onclick="simulateDownload()">
+            立即下载
+        </button>
+        <div id="status"></div>
+    </div>
+
+    <div id="log" class="log"></div>
+
+    <script>
+        function log(message) {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${timestamp}] ${message}<br>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function testVideo() {
+            const url = "https://www.bilibili.com/video/BV1jUgA6YEw6/?spm_id_from=333.1387.upload.video_card.click&vd_source=c560d6ba0469a144a9cdcc011";
+
+            log("开始解析视频...");
+
+            try {
+                const response = await fetch('/api/parse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    log(`解析成功！视频标题: ${result.data.title}`);
+                    log(`平台: ${result.data.platform}`);
+                    log(`可选格式数量: ${result.data.formats.length}`);
+
+                    // 显示视频信息
+                    document.getElementById('videoInfo').innerHTML = `
+                        <p><strong>标题:</strong> ${result.data.title}</p>
+                        <p><strong>时长:</strong> ${result.data.duration_string}</p>
+                        <p><strong>上传者:</strong> ${result.data.uploader}</p>
+                    `;
+
+                    // 显示格式列表
+                    const formatsList = document.getElementById('formatsList');
+                    formatsList.innerHTML = '';
+
+                    result.data.formats.forEach((fmt, index) => {
+                        const div = document.createElement('div');
+                        div.className = 'format-item';
+                        div.innerHTML = `
+                            <div><strong>${fmt.label}</strong></div>
+                            <div>Format ID: ${fmt.format_id}</div>
+                            <div>Size: ${fmt.filesize} bytes</div>
+                        `;
+                        div.onclick = () => selectFormat(index, fmt);
+                        formatsList.appendChild(div);
+                    });
+
+                    // 自动选择第一个格式
+                    if (result.data.formats.length > 0) {
+                        selectFormat(0, result.data.formats[0]);
+                    }
+
+                    document.getElementById('videoContainer').style.display = 'block';
+                } else {
+                    log(`解析失败: ${result.error}`);
+                }
+            } catch (error) {
+                log(`请求失败: ${error.message}`);
+            }
+        }
+
+        let selectedFormat = null;
+
+        function selectFormat(index, format) {
+            // 清除之前的选中状态
+            document.querySelectorAll('.format-item').forEach((item, i) => {
+                item.classList.toggle('selected', i === index);
+            });
+
+            selectedFormat = format;
+            updateDownloadButton();
+            log(`选中格式: ${format.label} (ID: ${format.format_id})`);
+        }
+
+        function updateDownloadButton() {
+            const btn = document.getElementById('downloadBtn');
+            const status = document.getElementById('status');
+
+            if (!selectedFormat) {
+                btn.disabled = true;
+                status.textContent = '请先选择一个格式';
+                log('下载按钮已禁用：未选择格式');
+            } else {
+                btn.disabled = false;
+                status.textContent = '';
+                log(`下载按钮已启用：已选择格式 ${selectedFormat.format_id}`);
+            }
+        }
+
+        function simulateDownload() {
+            if (!selectedFormat) {
+                log('无法下载：没有选择格式');
+                return;
+            }
+
+            log('开始模拟下载...');
+            document.getElementById('downloadBtn').disabled = true;
+            document.getElementById('downloadBtn').textContent = '下载中...';
+
+            setTimeout(() => {
+                log('下载完成！');
+                document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('downloadBtn').textContent = '立即下载';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>

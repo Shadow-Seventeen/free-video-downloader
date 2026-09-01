@@ -127,7 +127,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 
 const props = defineProps({
   video: { type: Object, required: true },
@@ -141,12 +141,22 @@ const thumbnailUrl = computed(() => {
   return '/api/proxy/thumbnail?url=' + encodeURIComponent(props.video.thumbnail)
 })
 
-const selectedFormat = ref(
-  props.video.formats?.length > 0 ? props.video.formats[0].format_id : ''
-)
+const availableFormats = computed(() => props.video?.formats || [])
+
+const selectedFormat = ref('')
+
+// 监听格式变化
+watch(() => props.video.formats, (newFormats) => {
+  console.log('Formats updated:', newFormats?.length || 0)
+  if (newFormats && newFormats.length > 0) {
+    selectedFormat.value = newFormats[0].format_id
+  } else {
+    selectedFormat.value = ''
+  }
+}, { immediate: true })
 
 function getSelectedLabel() {
-  const fmt = props.video.formats?.find(f => f.format_id === selectedFormat.value)
+  const fmt = availableFormats.value.find(f => f.format_id === selectedFormat.value)
   return fmt?.label || ''
 }
 
@@ -156,4 +166,11 @@ function formatViewCount(count) {
   if (count >= 10000) return (count / 10000).toFixed(1) + '万'
   return count.toLocaleString()
 }
+
+onMounted(() => {
+  console.log('VideoResult mounted with:', {
+    videoTitle: props.video.title,
+    formatsCount: availableFormats.value.length
+  })
+})
 </script>

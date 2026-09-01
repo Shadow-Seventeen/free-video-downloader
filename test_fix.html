@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修复测试 - 视频时长问题</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .format-item {
+            padding: 12px;
+            margin: 8px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .format-item:hover {
+            background: #f5f5f5;
+        }
+        .format-item.selected {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        .format-item.recommended {
+            border: 2px solid #28a745;
+            background: #f8f9fa;
+        }
+        .format-item.warning {
+            border: 2px solid #ffc107;
+            background: #fff3cd;
+        }
+        .format-item.danger {
+            border: 2px solid #dc3545;
+            background: #f8d7da;
+        }
+        .download-btn {
+            width: 100%;
+            padding: 12px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .download-btn:hover:not(:disabled) {
+            background: #218838;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .download-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .error {
+            color: #dc3545;
+        }
+        .success {
+            color: #28a745;
+        }
+        .info {
+            color: #17a2b8;
+        }
+        .warning {
+            color: #ffc107;
+        }
+        .video-info {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+        .format-icons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .icon-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge-recommended {
+            background: #28a745;
+            color: white;
+        }
+        .badge-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎬 视频时长问题修复测试</h1>
+
+        <div class="input-group">
+            <input type="text" id="videoUrl"
+                   value="https://www.bilibili.com/video/BV1jUgA6YEw6/?spm_id_from=333.1387.upload.video_card.click&vd_source=c560d6ba0469a144a9cdcc0bfd06c011"
+                   placeholder="输入视频URL">
+            <button onclick="parseVideo()">解析视频</button>
+        </div>
+
+        <div id="videoInfo" class="video-info" style="display: none;">
+            <h3>视频信息</h3>
+            <p><strong>标题:</strong> <span id="videoTitle"></span></p>
+            <p><strong>平台:</strong> <span id="videoPlatform"></span></p>
+            <p><strong>总时长:</strong> <span id="videoDuration"></span></p>
+            <p><strong>上传者:</strong> <span id="videoUploader"></span></p>
+        </div>
+
+        <div id="formatList" style="display: none;">
+            <h3>📝 选择格式</h3>
+            <p style="margin-bottom: 10px; color: #666;">
+                <strong>💡 提示：</strong>推荐选择带有"⭐ 推荐"或标记为"完整视频"的格式，这些格式会下载完整的视频内容。
+            </p>
+            <div id="formats"></div>
+
+            <button id="downloadBtn" class="download-btn" onclick="downloadVideo()">
+                🚀 立即下载（完整版）
+            </button>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script>
+        let videoData = null;
+        let selectedFormat = null;
+        let isDownloading = false;
+
+        function log(message, type = 'info') {
+            const status = document.getElementById('status');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type;
+            status.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            status.scrollTop = status.scrollHeight;
+        }
+
+        async function parseVideo() {
+            const url = document.getElementById('videoUrl').value.trim();
+            if (!url) {
+                log('请输入视频URL', 'error');
+                return;
+            }
+
+            log('开始解析视频...', 'info');
+            document.getElementById('videoInfo').style.display = 'none';
+            document.getElementById('formatList').style.display = 'none';
+
+            try {
+                const response = await fetch('/api/parse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url })
+                });
+
+                const result = await response.json();
+                log('API响应状态: ' + response.status, 'info');
+
+                if (result.success) {
+                    videoData = result.data;
+                    log('解析成功！', 'success');
+                    log(`视频标题: ${videoData.title}`, 'info');
+                    log(`总时长: ${videoData.duration_string}`, 'info');
+                    log(`格式数量: ${videoData.formats.length}`, 'info');
+
+                    displayVideoInfo();
+                    displayFormats();
+
+                    // 检查是否有推荐的完整格式
+                    const recommendedFormats = videoData.formats.filter(f =>
+                        f.label.includes('推荐') ||
+                        f.label.includes('完整视频') ||
+                        f.label.includes('⭐')
+                    );
+
+                    if (recommendedFormats.length > 0) {
+                        log(`✅ 发现 ${recommendedFormats.length} 个推荐格式，确保下载完整视频`, 'success');
+                    } else {
+                        log('⚠️ 未发现明确标记的完整格式，请谨慎选择', 'warning');
+                    }
+
+                } else {
+                    log('解析失败: ' + (result.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                log('网络错误: ' + error.message, 'error');
+                console.error('Error:', error);
+            }
+        }
+
+        function displayVideoInfo() {
+            document.getElementById('videoTitle').textContent = videoData.title;
+            document.getElementById('videoPlatform').textContent = videoData.platform;
+            document.getElementById('videoDuration').textContent = videoData.duration_string;
+            document.getElementById('videoUploader').textContent = videoData.uploader;
+            document.getElementById('videoInfo').style.display = 'block';
+        }
+
+        function displayFormats() {
+            const formatsDiv = document.getElementById('formats');
+            formatsDiv.innerHTML = '';
+
+            videoData.formats.forEach((fmt, index) => {
+                const div = document.createElement('div');
+                div.className = 'format-item';
+
+                // 添加样式类
+                if (fmt.label.includes('推荐') || fmt.label.includes('⭐')) {
+                    div.classList.add('recommended');
+                } else if (fmt.label.includes('⚠️') || fmt.label.includes('可能不完整')) {
+                    div.classList.add('warning');
+                } else if (fmt.label.includes('片段')) {
+                    div.classList.add('danger');
+                }
+
+                // 计算预估时间
+                let timeEstimate = '';
+                if (fmt.filesize && fmt.filesize > 0) {
+                    const secondsPerByte = 3627 / (fmt.filesize || 1); // 基于总时长估算
+                    const estimatedDuration = fmt.filesize * secondsPerByte;
+                    timeEstimate = `≈${Math.floor(estimatedDuration / 60)}分${Math.floor(estimatedDuration % 60)}秒`;
+                }
+
+                div.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <strong>${fmt.label}</strong>
+                            <div style="font-size: 14px; color: #666; margin-top: 4px;">
+                                ${fmt.resolution} | ${fmt.ext.toUpperCase()} |
+                                ${fmt.filesize ? (fmt.filesize / 1024 / 1024).toFixed(1) + 'MB' : '未知大小'} |
+                                ${timeEstimate}
+                            </div>
+                        </div>
+                        <div class="format-icons">
+                            ${fmt.label.includes('推荐') || fmt.label.includes('⭐') ?
+                                '<span class="icon-badge badge-recommended">⭐ 推荐</span>' : ''}
+                            ${fmt.label.includes('⚠️') ?
+                                '<span class="icon-badge badge-warning">⚠️</span>' : ''}
+                            ${fmt.label.includes('片段') ?
+                                '<span class="icon-badge badge-danger">⚠️ 片段</span>' : ''}
+                            ${fmt.has_audio ?
+                                '<span class="icon-badge" style="background: #007bff; color: white;">🔊 音频</span>' :
+                                '<span class="icon-badge" style="background: #6c757d; color: white;">🎬 仅视频</span>'}
+                        </div>
+                    </div>
+                `;
+
+                div.onclick = () => selectFormat(index, fmt);
+                formatsDiv.appendChild(div);
+            });
+
+            // 自动选择第一个推荐格式
+            const recommendedIndex = videoData.formats.findIndex(f =>
+                f.label.includes('推荐') || f.label.includes('⭐') || f.label.includes('完整视频')
+            );
+
+            if (recommendedIndex >= 0) {
+                selectFormat(recommendedIndex, videoData.formats[recommendedIndex]);
+                log(`✅ 自动选择推荐格式: ${videoData.formats[recommendedIndex].label}`, 'success');
+            } else {
+                selectFormat(0, videoData.formats[0]);
+            }
+
+            document.getElementById('formatList').style.display = 'block';
+        }
+
+        function selectFormat(index, format) {
+            // 清除之前的选中状态
+            document.querySelectorAll('.format-item').forEach((item, i) => {
+                item.classList.toggle('selected', i === index);
+            });
+
+            selectedFormat = format;
+            log(`选中格式: ${format.label} (ID: ${format.format_id})`, 'info');
+
+            // 更新下载按钮状态
+            updateDownloadButton();
+        }
+
+        function updateDownloadButton() {
+            const btn = document.getElementById('downloadBtn');
+
+            if (!selectedFormat || isDownloading) {
+                btn.disabled = true;
+                if (!selectedFormat) {
+                    btn.textContent = '请先选择一个格式';
+                } else if (isDownloading) {
+                    btn.textContent = '下载中...';
+                }
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🚀 立即下载（' +
+                    (selectedFormat.label.includes('推荐') ? '推荐' :
+                     selectedFormat.label.includes('完整视频') ? '完整版' : '标准版') + '）';
+            }
+        }
+
+        async function downloadVideo() {
+            if (!selectedFormat) {
+                log('请先选择一个格式', 'error');
+                return;
+            }
+
+            if (isDownloading) {
+                log('正在下载中，请勿重复点击', 'error');
+                return;
+            }
+
+            isDownloading = true;
+            updateDownloadButton();
+
+            log('开始下载...', 'info');
+            log(`选择的格式: ${selectedFormat.label}`, 'info');
+            log(`格式ID: ${selectedFormat.format_id}`, 'info');
+
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        url: document.getElementById('videoUrl').value.trim(),
+                        format_id: selectedFormat.format_id
+                    })
+                });
+
+                if (response.ok) {
+                    log('✅ 下载成功！', 'success');
+                    log(`📁 文件大小: ${response.headers.get('content-length') || '未知'} bytes`, 'info');
+
+                    // 处理文件下载
+                    const blob = await response.blob();
+                    const downloadUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = downloadUrl;
+                    a.download = videoData.title.replace(/[/\\?%*:|"<>]/g, '_') + '.mp4';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(downloadUrl);
+
+                    log('🎉 文件开始下载，请查看浏览器下载列表', 'success');
+                } else {
+                    const error = await response.json();
+                    log('❌ 下载失败: ' + (error.error || '未知错误'), 'error');
+                }
+            } catch (error) {
+                log('❌ 下载失败: ' + error.message, 'error');
+            } finally {
+                isDownloading = false;
+                updateDownloadButton();
+            }
+        }
+    </script>
+</body>
+</html>
