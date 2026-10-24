@@ -102,6 +102,21 @@
           </svg>
           {{ downloading ? '下载中，请稍候...' : '立即下载' }}
         </button>
+        <!-- 下载目录 -->
+        <div v-if="canPickDir" class="flex items-center justify-center gap-1.5 text-xs text-text-muted">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+          </svg>
+          <span>保存到：{{ saveDirName || '首次下载时选择' }}</span>
+          <button
+            type="button"
+            @click="$emit('choose-dir')"
+            class="text-primary hover:underline cursor-pointer"
+          >
+            {{ saveDirName ? '更改' : '选择目录' }}
+          </button>
+        </div>
         <!-- AI 总结按钮（重新总结） -->
         <button
           @click="$emit('summarize')"
@@ -133,8 +148,10 @@ const props = defineProps({
   video: { type: Object, required: true },
   downloading: Boolean,
   summarizing: Boolean,
+  saveDirName: { type: String, default: '' },
+  canPickDir: Boolean,
 })
-defineEmits(['download', 'summarize'])
+defineEmits(['download', 'summarize', 'choose-dir'])
 
 const thumbnailUrl = computed(() => {
   if (!props.video.thumbnail) return ''

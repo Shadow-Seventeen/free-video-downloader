@@ -24,8 +24,11 @@
                 :video="videoData"
                 :downloading="downloading"
                 :summarizing="summarizing"
+                :save-dir-name="downloadDirName"
+                :can-pick-dir="canPickDir"
                 @download="handleDownload"
                 @summarize="handleSummarize"
+                @choose-dir="handleChooseDir"
               />
             </div>
             <!-- 右栏：AI 总结 -->
@@ -96,6 +99,13 @@ import AuthModal from './components/AuthModal.vue'
 import { parseVideo, downloadViaServer } from './api/video.js'
 import { getSavedUser, fetchMe, logout as logoutApi, isLoggedIn } from './api/auth.js'
 import { createCheckoutSession } from './api/payment.js'
+import {
+  supportsDirectoryPicker,
+  getRememberedDir,
+  chooseDir,
+  ensureDirPermission,
+  saveBlobToDir,
+} from './utils/downloadDir.js'
 
 const demoMode = ref(false)
 let enterCount = 0
@@ -118,6 +128,7 @@ onMounted(() => {
   document.addEventListener('keydown', onKeyDown)
   restoreUser()
   checkPaymentResult()
+  loadDownloadDir()
 })
 onBeforeUnmount(() => { document.removeEventListener('keydown', onKeyDown) })
 
@@ -192,6 +203,47 @@ const currentUrl = ref('')
 const summaryKey = ref(0)
 const summarizing = ref(false)
 
+// ===== 下载目录 =====
+const canPickDir = supportsDirectoryPicker
+const downloadDirName = ref('')
+let downloadDirHandle = null
+
+async function loadDownloadDir() {
+  if (!canPickDir) return
+  const handle = await getRememberedDir()
+  if (handle) {
+    downloadDirHandle = handle
+    downloadDirName.value = handle.name
+  }
+}
+
+async function handleChooseDir() {
+  try {
+    const handle = await chooseDir()
+    downloadDirHandle = handle
+    downloadDirName.value = handle.name
+  } catch (err) {
+    if (err?.name !== 'AbortError') {
+      alert('选择目录失败：' + (err.message || err))
+    }
+  }
+}
+
+// 点击下载时确定目标目录：优先复用上次目录，没有则弹出选择
+async function resolveDownloadDir() {
+  if (!canPickDir) return null
+  if (!downloadDirHandle) downloadDirHandle = await getRememberedDir()
+  if (downloadDirHandle && await ensureDirPermission(downloadDirHandle)) {
+    downloadDirName.value = downloadDirHandle.name
+    return downloadDirHandle
+  }
+  downloadDirHandle = null
+  const handle = await chooseDir()
+  downloadDirHandle = handle
+  downloadDirName.value = handle.name
+  return handle
+}
+
 function handleSummarize() {
   summaryKey.value++
 }
@@ -225,6 +277,8 @@ async function handleDownload(formatId) {
   try {
     console.log('开始下载，formatId:', formatId)
 
+    const targetDir = await resolveDownloadDir()
+
     const response = await downloadViaServer(currentUrl.value, formatId)
     console.log('下载响应状态:', response.status)
     console.log('响应类型:', response.headers['content-type'])
@@ -256,7 +310,13 @@ async function handleDownload(formatId) {
     const blob = new Blob([response.data], { type: response.headers['content-type'] || 'video/mp4' })
     console.log('Blob大小:', blob.size)
 
-    // 方法1：使用标准下载方式
+    if (targetDir) {
+      // 直接写入用户选择的目录
+      await saveBlobToDir(targetDir, filename, blob)
+      return
+    }
+
+    // 浏览器不支持目录选择时，使用标准下载方式
     const downloadUrl = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = downloadUrl
@@ -280,6 +340,7 @@ async function handleDownload(formatId) {
     }, 100)
 
   } catch (err) {
+    if (err?.name === 'AbortError') return
     console.error('下载失败:', err)
     alert('下载失败：' + (err.message || '请稍后重试'))
   } finally {
