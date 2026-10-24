@@ -346,6 +346,10 @@ class VideoDownloader:
             ydl_opts["ffmpeg_location"] = self.ffmpeg_path
             ydl_opts["merge_output_format"] = "mp4"
 
+        # QuickTime 等播放器不支持 AV1，B站同分辨率下优先选 H.264
+        if is_bilibili:
+            ydl_opts["format_sort"] = ["vcodec:h264"]
+
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
 

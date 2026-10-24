@@ -279,62 +279,6 @@ async function handleDownload(formatId) {
       window.URL.revokeObjectURL(downloadUrl)
     }, 100)
 
-    // 方法2：备用方案 - 检查是否真的开始下载
-    setTimeout(() => {
-      const activeDownloads = document.querySelectorAll('a[download]')
-      if (activeDownloads.length === 0) {
-        console.log('方法1失败，尝试方法2：新窗口打开')
-        window.open(downloadUrl, '_blank')
-
-        // 延长清理时间
-        setTimeout(() => {
-          window.URL.revokeObjectURL(downloadUrl)
-        }, 5000)
-      }
-    }, 1000)
-
-    // 方法3：最终备用 - 显示手动下载提示
-    setTimeout(() => {
-      const finalCheck = document.querySelectorAll('a[download]')
-      if (finalCheck.length === 0) {
-        console.log('所有自动方法都失败了，显示手动下载链接')
-
-        // 创建下载提示
-        const notice = document.createElement('div')
-        notice.id = 'download-notice'
-        notice.style.cssText = `
-          position: fixed;
-          top: 20px;
-          right: 20px;
-          background: #28a745;
-          color: white;
-          padding: 15px;
-          border-radius: 4px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-          z-index: 10000;
-          max-width: 300px;
-        `
-        notice.innerHTML = `
-          <p style="margin: 0 0 10px 0;">📥 如果下载没有自动开始：</p>
-          <a href="${downloadUrl}" download="${filename}"
-             style="display: inline-block; background: white; color: #28a745;
-                    padding: 8px 12px; text-decoration: none; border-radius: 4px; font-weight: bold;">
-            点击手动下载
-          </a>
-          <p style="margin: 10px 0 0 0; font-size: 12px; opacity: 0.9;">文件名：${filename}</p>
-        `
-        document.body.appendChild(notice)
-
-        // 5秒后自动移除提示
-        setTimeout(() => {
-          const noticeEl = document.getElementById('download-notice')
-          if (noticeEl && noticeEl.parentNode) {
-            noticeEl.parentNode.removeChild(noticeEl)
-          }
-        }, 5000)
-      }
-    }, 2000)
-
   } catch (err) {
     console.error('下载失败:', err)
     alert('下载失败：' + (err.message || '请稍后重试'))

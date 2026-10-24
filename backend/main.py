@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.background import BackgroundTask
 
 from downloader import VideoDownloader
 from douyin import DouyinParser, is_douyin_url
@@ -83,6 +84,13 @@ async def parse_video(req: ParseRequest):
         })
 
 
+def _remove_temp_file(path: str):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 @app.post("/api/download")
 async def download_video(req: DownloadRequest):
     """服务端下载视频后提供文件下载（抖音走专用模块）"""
@@ -101,6 +109,7 @@ async def download_video(req: DownloadRequest):
             path=filepath,
             filename=result["filename"],
             media_type="application/octet-stream",
+            background=BackgroundTask(_remove_temp_file, filepath),
         )
     except HTTPException:
         raise
