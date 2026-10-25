@@ -29,9 +29,10 @@ backend/logs/
 *.part
 *.log
 
-# 环境变量
+# 环境变量与凭据
 .env
 .env.local
+backend/bilibili_cookies.txt
 
 # 本地数据库（SQLite）
 backend/data/
