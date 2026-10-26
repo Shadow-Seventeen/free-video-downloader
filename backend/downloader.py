@@ -5,10 +5,24 @@ import yt_dlp
 from typing import Optional
 
 
+FFMPEG_SEARCH_DIRS = (
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    "/usr/bin",
+    "/bin",
+)
+
+
 def _find_ffmpeg_path() -> Optional[str]:
     """查找 ffmpeg 可执行文件路径"""
-    if shutil.which("ffmpeg"):
-        return os.path.dirname(shutil.which("ffmpeg"))
+    found = shutil.which("ffmpeg")
+    if found:
+        return os.path.dirname(found)
+    # launchd 等环境 PATH 极简，显式探测常见安装目录
+    for d in FFMPEG_SEARCH_DIRS:
+        candidate = os.path.join(d, "ffmpeg")
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return d
     try:
         import static_ffmpeg
         paths = static_ffmpeg.run.get_or_fetch_platform_executables_else_raise()

@@ -21,7 +21,7 @@
 | B 站 Cookie（可选） | `backend/bilibili_cookies.txt` |
 | 下载目录 | `/Users/shadow/Downloads/野生量化员` |
 
-依赖：`backend/.venv` 中的 Python 3.13、`yt-dlp`、`httpx`；ffmpeg 由 `downloader._find_ffmpeg_path()` 查找（当前为 `/opt/homebrew/bin`）。
+依赖：`backend/.venv` 中的 Python 3.13、`yt-dlp`、`httpx`；ffmpeg 由 `downloader._find_ffmpeg_path()` 查找。launchd 环境的 PATH 只有 `/usr/bin:/bin`，所以该函数在 `shutil.which` 失败后会显式探测 `/opt/homebrew/bin`、`/usr/local/bin`、`/usr/bin`、`/bin`（当前命中 `/opt/homebrew/bin`），最后才回退 `static_ffmpeg`。
 
 ---
 
