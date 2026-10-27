@@ -4,7 +4,7 @@
 
 - UP 主 UID：`351413419`（野生量化员）
 - 下载目录：`/Users/shadow/Downloads/野生量化员`
-- 定时时间：每天 `08:00`
+- 定时时间：每天 `00:00`、`02:00` … `22:00`，每 2 小时一次，共 12 次
 - 不依赖本项目后端（FastAPI）是否启动，独立运行
 
 ---
@@ -27,7 +27,7 @@
 
 ## 2. 日常运行：不需要手动执行
 
-launchd 会在每天 `08:00` 自动调用：
+launchd 会在每天 `00:00`、`02:00` … `22:00`（每 2 小时）自动调用：
 
 ```bash
 backend/.venv/bin/python backend/bili_sync.py --check \
@@ -45,9 +45,12 @@ backend/.venv/bin/python backend/bili_sync.py --check \
 
 ```bash
 cd backend
-.venv/bin/python bili_sync.py --install-schedule 08:00   # 改时间/重新安装
-.venv/bin/python bili_sync.py --uninstall-schedule       # 卸载
+.venv/bin/python bili_sync.py --install-schedule 08:00 --every-hours 2  # 从 08:00 起每 2 小时一次（当前配置）
+.venv/bin/python bili_sync.py --install-schedule 08:00                  # 只保留每天一次
+.venv/bin/python bili_sync.py --uninstall-schedule                       # 卸载
 ```
+
+`--every-hours N` 要求 N 能整除 24（1/2/3/4/6/8/12/24），跨午夜自动环绕，例如 `08:00` + `2` 会生成 `00:00、02:00 … 22:00`。
 
 安装命令会重写 plist 并执行 `launchctl bootout` + `bootstrap`，立即生效。
 
@@ -145,7 +148,7 @@ PY
 - **编码**：B 站同分辨率优先选 H.264（`format_sort: ["vcodec:h264"]`），合并为 mp4，兼容 QuickTime。
 - **命名**：使用视频标题，自动清理文件系统非法字符。
 - **已有文件匹配**：按“标题归一化”匹配下载目录里的成品文件，避免重复下载；只认 `.mp4/.mkv/.webm/.flv/.m4a/.mp3`，**`.part` 等未完成文件不参与匹配**。
-- **网络**：`socket_timeout=30`，下载/分片各重试 10 次；中断的分片会在下次运行时续传。
+- **网络**：`socket_timeout=30`，下载/分片各重试 10 次；中断的分片会在下次运行时续传。启动时会先探测 `api.bilibili.com` 是否可达，未就绪则每 20 秒重试（最多 30 次，参数 `NETWORK_WAIT_ATTEMPTS` / `NETWORK_WAIT_SECONDS`），期间日志打印“网络尚未就绪，等待重试…”；系统若在等待中回睡，进程挂起、下次唤醒后继续。拉取投稿列表失败会再整体重试 3 轮。
 - **磁盘**：每次下载前检查剩余空间，低于 2GB 时该视频记失败并继续下一个。
 - **电源策略**：运行期间每 30 秒检查一次电源，**插电或电池 >30%** 时阻止空闲睡眠；低于 30% 且未插电时允许系统休眠（任务暂停，唤醒后续传）。阈值和间隔在脚本顶部（`BATTERY_FLOOR_PCT`）。
 - **Cookie**：文件存在时传给 yt-dlp，并取出 `buvid3` / `b_nut` 用于元数据请求；不存在也能运行。
@@ -170,6 +173,9 @@ launchctl kickstart -k gui/$(id -u)/com.wildquant.bili-sync
 macOS 空闲睡眠会暂停进程。脚本已内置电源策略：插电或电池 >30% 时自动阻止空闲睡眠，日志里会打印“下载期间阻止系统睡眠（…）”；掉到 30% 以下且未插电时允许休眠。若日志显示已允许睡眠，插电即可恢复全速，无需再手动套 `caffeinate`。
 
 合盖（clamshell）时系统仍会休眠，任何断言都无效，唤醒后自动续传。
+
+**任务启动了但日志只有“拉取投稿列表”而失败**
+原因是系统处在暗唤醒（DarkWake）：Wi-Fi/DNS 还没起来，首个请求就解析失败（`Failed to resolve 'api.bilibili.com'`）。脚本现在会先等网络（每 20 秒重试，最多约 10 分钟），并用 `pmset -g log | grep -i darkwake` 可核实唤醒原因。若当天仍没下载，手动 kickstart 一次即可补齐。
 
 **目录里残留 `.part`**
 未完成的视频分片，正常现象；下次运行会续传，且不会被误判为已完成。确认没有下载任务后可以手动删除。

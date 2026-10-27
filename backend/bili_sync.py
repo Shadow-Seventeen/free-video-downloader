@@ -15,6 +15,7 @@ import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -42,6 +43,10 @@ UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
 BATTERY_FLOOR_PCT = 30
 KEEP_AWAKE_CHECK_SECONDS = 30
 KEEP_AWAKE_ASSERTION_SECONDS = 60  # 比检查间隔长，保证断言无缝衔接
+
+# launchd 在暗唤醒（DarkWake）里启动时 Wi-Fi/DNS 可能还没就绪，先等网络
+NETWORK_WAIT_ATTEMPTS = 30
+NETWORK_WAIT_SECONDS = 20
 
 
 def log(msg):
@@ -135,14 +140,50 @@ def buvid_cookies():
     return cookies
 
 
+def network_ready(timeout=5):
+    try:
+        socket.create_connection(("api.bilibili.com", 443), timeout=timeout).close()
+        return True
+    except OSError:
+        return False
+
+
+def wait_for_network():
+    """暗唤醒刚起来时 DNS/Wi-Fi 往往还没就绪，先等网络可用再发请求。
+
+    系统若在这期间回睡，进程会被挂起，下次维护唤醒后继续重试。
+    """
+    for attempt in range(1, NETWORK_WAIT_ATTEMPTS + 1):
+        if network_ready():
+            if attempt > 1:
+                log(f"网络已就绪（等待 {(attempt - 1) * NETWORK_WAIT_SECONDS} 秒）")
+            return True
+        if attempt == 1:
+            log("网络尚未就绪，等待重试…")
+        else:
+            log(f"网络仍不可用，继续等待（第 {attempt}/{NETWORK_WAIT_ATTEMPTS} 次）")
+        time.sleep(NETWORK_WAIT_SECONDS)
+    log("网络始终不可用，本次跳过")
+    return False
+
+
 def fetch_bvids(mid):
     opts = {"quiet": True, "no_warnings": True, "extract_flat": True}
     if os.path.exists(COOKIE_FILE):
         opts["cookiefile"] = COOKIE_FILE
     url = f"https://space.bilibili.com/{mid}/upload/video"
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-    return [e["id"] for e in (info.get("entries") or []) if e and e.get("id")]
+    last = None
+    for attempt in range(1, 4):
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            return [e["id"] for e in (info.get("entries") or []) if e and e.get("id")]
+        except Exception as e:
+            last = e
+            log(f"拉取投稿列表失败：{e}")
+            if attempt < 3 and not wait_for_network():
+                break
+    raise last
 
 
 def fetch_meta(client, bv):
@@ -265,8 +306,15 @@ def run_sync(args):
     state = load_state(spath)
     videos = state.setdefault("videos", {})
 
+    if not wait_for_network():
+        return 1
+
     log(f"拉取 UP 主 {args.mid} 投稿列表…")
-    bvids = fetch_bvids(args.mid)
+    try:
+        bvids = fetch_bvids(args.mid)
+    except Exception as e:
+        log(f"获取投稿列表失败，本次放弃：{e}（明天会再试）")
+        return 1
     if args.limit:
         bvids = bvids[:args.limit]
     log(f"共 {len(bvids)} 个投稿")
@@ -357,10 +405,25 @@ def parse_time(value):
     return hour, minute
 
 
-def install_schedule(value, args):
+def parse_schedule(value, every_hours=None):
     hour, minute = parse_time(value)
+    if not every_hours:
+        return [(hour, minute)]
+    if not (1 <= every_hours <= 24) or 24 % every_hours:
+        raise SystemExit("--every-hours 必须是能整除 24 的整数（1/2/3/4/6/8/12/24）")
+    return sorted(((hour + i * every_hours) % 24, minute)
+                  for i in range(24 // every_hours))
+
+
+def install_schedule(value, args):
+    times = parse_schedule(value, args.every_hours)
     os.makedirs(os.path.dirname(PLIST_PATH), exist_ok=True)
     os.makedirs(DATA_DIR, exist_ok=True)
+    triggers = "".join(
+        f"    <dict><key>Hour</key><integer>{hour}</integer>"
+        f"<key>Minute</key><integer>{minute}</integer></dict>\n"
+        for hour, minute in times
+    )
     plist = f"""<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -376,10 +439,8 @@ def install_schedule(value, args):
   </array>
   <key>WorkingDirectory</key><string>{BACKEND_DIR}</string>
   <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key><integer>{hour}</integer>
-    <key>Minute</key><integer>{minute}</integer>
-  </dict>
+  <array>
+{triggers}  </array>
   <key>StandardOutPath</key><string>{os.path.join(DATA_DIR, "bili_sync.out.log")}</string>
   <key>StandardErrorPath</key><string>{os.path.join(DATA_DIR, "bili_sync.err.log")}</string>
   <key>RunAtLoad</key><false/>
@@ -392,8 +453,8 @@ def install_schedule(value, args):
     subprocess.run(["launchctl", "bootout", f"gui/{uid}", PLIST_PATH],
                    capture_output=True, check=False)
     subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", PLIST_PATH], check=True)
-    log(f"已安装定时任务：每天 {hour:02d}:{minute:02d}（{PLIST_PATH}）")
-    log(f"修改时间：重新执行 --install-schedule HH:MM 即可")
+    log("已安装定时任务：" + "、".join(f"{h:02d}:{m:02d}" for h, m in times))
+    log(f"修改时间：重新执行 --install-schedule HH:MM [--every-hours N] 即可（{PLIST_PATH}）")
     log(f"输出目录：{args.out}，日志：{os.path.join(DATA_DIR, 'bili_sync.out.log')}")
     return 0
 
@@ -416,7 +477,9 @@ def main():
     parser.add_argument("--mid", default=DEFAULT_MID, help="UP 主 UID")
     parser.add_argument("--out", default=DEFAULT_OUT_DIR, help="下载目录")
     parser.add_argument("--limit", type=int, help="只处理列表前 N 个（调试用）")
-    parser.add_argument("--install-schedule", metavar="HH:MM", help="安装每日定时任务")
+    parser.add_argument("--install-schedule", metavar="HH:MM", help="安装定时任务（配合 --every-hours 可多次）")
+    parser.add_argument("--every-hours", type=int, metavar="N",
+                        help="从 --install-schedule 的时间起每 N 小时运行一次（需整除 24）")
     parser.add_argument("--uninstall-schedule", action="store_true", help="卸载定时任务")
     args = parser.parse_args()
 
