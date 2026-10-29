@@ -44,8 +44,9 @@ BATTERY_FLOOR_PCT = 30
 KEEP_AWAKE_CHECK_SECONDS = 30
 KEEP_AWAKE_ASSERTION_SECONDS = 60  # 比检查间隔长，保证断言无缝衔接
 
-# launchd 在暗唤醒（DarkWake）里启动时 Wi-Fi/DNS 可能还没就绪，先等网络
-NETWORK_WAIT_ATTEMPTS = 30
+# launchd 在暗唤醒（DarkWake）里启动时 Wi-Fi/DNS 可能还没就绪，先短暂等网络；
+# 等不到就退出，交给 2 小时后的下一次触发，避免进程长期占锁、把后续触发点挤掉
+NETWORK_WAIT_ATTEMPTS = 6
 NETWORK_WAIT_SECONDS = 20
 
 
@@ -163,7 +164,7 @@ def wait_for_network():
         else:
             log(f"网络仍不可用，继续等待（第 {attempt}/{NETWORK_WAIT_ATTEMPTS} 次）")
         time.sleep(NETWORK_WAIT_SECONDS)
-    log("网络始终不可用，本次跳过")
+    log("网络始终不可用，本次跳过（下次触发会再试）")
     return False
 
 
